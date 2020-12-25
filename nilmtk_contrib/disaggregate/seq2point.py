@@ -1,18 +1,17 @@
 from __future__ import print_function, division
 from warnings import warn
 from nilmtk.disaggregate import Disaggregator
-from keras.layers import Conv1D, Dense, Dropout, Reshape, Flatten
+from tensorflow.keras.layers import Conv1D, Dense, Dropout, Reshape, Flatten
 import os
 import pickle
 import pandas as pd
 import numpy as np
 from collections import OrderedDict
-from keras.optimizers import SGD
-from keras.models import Sequential, load_model
+from tensorflow.keras.optimizers import SGD
+from tensorflow.keras.models import Sequential, load_model
 import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
-from keras.callbacks import ModelCheckpoint
-import keras.backend as K
+from tensorflow.keras.callbacks import ModelCheckpoint
+import tensorflow.keras.backend as K
 import random
 import sys
 random.seed(10)
@@ -44,38 +43,34 @@ class Seq2Point(Disaggregator):
             print ("Sequence length should be odd!")
             raise (SequenceLengthError)
 
-    def partial_fit(self,train_main,train_appliances,do_preprocessing=True,
-            **load_kwargs):
-
+    def partial_fit(self, train_main, train_appliances, do_preprocessing=True, **load_kwargs):
         # If no appliance wise parameters are provided, then copmute them using the first chunk
         if len(self.appliance_params) == 0:
             self.set_appliance_params(train_appliances)
 
         print("...............Seq2Point partial_fit running...............")
         # Do the pre-processing, such as  windowing and normalizing
-
         if do_preprocessing:
             train_main, train_appliances = self.call_preprocessing(
                 train_main, train_appliances, 'train')
 
-        train_main = pd.concat(train_main,axis=0)
-        train_main = train_main.values.reshape((-1,self.sequence_length,1))
-        
+        train_main = pd.concat(train_main, axis=0)
+        train_main = train_main.values.reshape((-1, self.sequence_length, 1))
         new_train_appliances = []
         for app_name, app_df in train_appliances:
-            app_df = pd.concat(app_df,axis=0)
-            app_df_values = app_df.values.reshape((-1,1))
+            app_df = pd.concat(app_df, axis=0)
+            app_df_values = app_df.values.reshape((-1, 1))
             new_train_appliances.append((app_name, app_df_values))
         train_appliances = new_train_appliances
 
         for appliance_name, power in train_appliances:
             # Check if the appliance was already trained. If not then create a new model for it
             if appliance_name not in self.models:
-                print("First model training for ", appliance_name)
+                print("First model training for", appliance_name)
                 self.models[appliance_name] = self.return_network()
             # Retrain the particular appliance
             else:
-                print("Started Retraining model for ", appliance_name)
+                print("Started Retraining model for", appliance_name)
 
             model = self.models[appliance_name]
             if train_main.size > 0:
@@ -84,8 +79,13 @@ class Seq2Point(Disaggregator):
                     # Do validation when you have sufficient samples
                     filepath = 'seq2point-temp-weights-'+str(random.randint(0,100000))+'.h5'
                     checkpoint = ModelCheckpoint(filepath,monitor='val_loss',verbose=1,save_best_only=True,mode='min')
-                    train_x, v_x, train_y, v_y = train_test_split(train_main, power, test_size=.15,random_state=10)
-                    model.fit(train_x,train_y,validation_data=[v_x,v_y],epochs=self.n_epochs,callbacks=[checkpoint],batch_size=self.batch_size)
+                    model.fit(
+                            train_main, power,
+                            validation_split=0.15,
+                            epochs=self.n_epochs,
+                            batch_size=self.batch_size,
+                            callbacks=[checkpoint],
+                    )
                     model.load_weights(filepath)
 
     def disaggregate_chunk(self,test_main_list,model=None,do_preprocessing=True):
